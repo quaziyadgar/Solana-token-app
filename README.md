@@ -137,3 +137,5 @@ MIT License - feel free to use and modify this code!
 
 
 This README provides clear setup, usage, and testing instructions while emphasizing the need for SOL to test token creation successfully. Let me know if you'd like to add more details or adjust anything!
+
+Hoisted link - https://solana-token-app.vercel.app/
