@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import * as splToken from '@solana/spl-token';
 import * as solanaWeb3 from '@solana/web3.js';
 
-const TokenManager = ({ connection, publicKey }) => {
+const TokenManager = ({ connection, publicKey, setBalance }) => {
   const [tokenName, setTokenName] = useState('');
   const [tokenSymbol, setTokenSymbol] = useState('');
   const [mintAmount, setMintAmount] = useState('');
@@ -18,35 +18,107 @@ const TokenManager = ({ connection, publicKey }) => {
       if (!connection || !publicKey) {
         throw new Error('Wallet not connected properly');
       }
-
-      setStatus('Creating token...');
-      console.log('Creating mint with:', { connection, payer: publicKey.toString() });
-
-      const mint = await splToken.createMint(
-        connection,
-        publicKey,          // Payer
-        publicKey,          // Mint Authority
-        null,              // Freeze Authority
-        9                  // Decimals
-      );
-
-      console.log('Mint created:', mint);
-
-      if (!mint || !(mint instanceof solanaWeb3.PublicKey)) {
-        throw new Error('Failed to create mint - invalid mint object');
+      if (!window.solana || !window.solana.isPhantom) {
+        throw new Error('Phantom wallet not detected');
       }
 
-      const associatedTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
-        connection,
-        publicKey,
-        mint,
-        publicKey
+      setStatus('Creating token...');
+      console.log('Public Key:', publicKey.toString());
+
+      // Fetch and log balance before transaction
+      let balanceLamports = await connection.getBalance(publicKey);
+      let balanceSol = balanceLamports / solanaWeb3.LAMPORTS_PER_SOL;
+      console.log('Balance before creation (lamports):', balanceLamports);
+      console.log('Balance before creation (SOL):', balanceSol);
+      if (balanceSol < 0.005) {
+        throw new Error('Insufficient SOL. Need at least 0.005 SOL for mint and ATA creation.');
+      }
+
+      const mintKeypair = solanaWeb3.Keypair.generate();
+      const lamports = await splToken.getMinimumBalanceForRentExemptMint(connection);
+
+      const transaction = new solanaWeb3.Transaction().add(
+        solanaWeb3.SystemProgram.createAccount({
+          fromPubkey: publicKey,
+          newAccountPubkey: mintKeypair.publicKey,
+          space: splToken.MINT_SIZE,
+          lamports,
+          programId: splToken.TOKEN_PROGRAM_ID,
+        }),
+        splToken.createInitializeMintInstruction(
+          mintKeypair.publicKey,
+          9,
+          publicKey,
+          null,
+          splToken.TOKEN_PROGRAM_ID
+        )
       );
 
-      console.log('Associated token account:', associatedTokenAccount);
+      const { blockhash, lastValidBlockHeight } = await connection.getLatestBlockhash();
+      transaction.recentBlockhash = blockhash;
+      transaction.feePayer = publicKey;
+
+      console.log('Sending transaction to Phantom for signing...');
+      const signedTransaction = await window.solana.signTransaction(transaction);
+      if (!signedTransaction) {
+        throw new Error('Phantom failed to sign the transaction');
+      }
+
+      signedTransaction.partialSign(mintKeypair);
+
+      console.log('Sending signed transaction...');
+      const txSignature = await connection.sendRawTransaction(signedTransaction.serialize());
+      console.log('Transaction sent, signature:', txSignature);
+
+      const confirmation = await connection.confirmTransaction({
+        signature: txSignature,
+        blockhash,
+        lastValidBlockHeight,
+      });
+      if (confirmation.value.err) {
+        throw new Error('Transaction failed: ' + confirmation.value.err.toString());
+      }
+
+      await new Promise(resolve => setTimeout(resolve, 1000));
+
+      const mint = mintKeypair.publicKey;
+      console.log('Attempting to create ATA for mint:', mint.toString());
+
+      let associatedTokenAccount;
+      let ataAttempts = 0;
+      const maxAttempts = 3;
+      while (ataAttempts < maxAttempts) {
+        try {
+          associatedTokenAccount = await splToken.getOrCreateAssociatedTokenAccount(
+            connection,
+            publicKey,
+            mint,
+            publicKey
+          );
+          break;
+        } catch (ataError) {
+          ataAttempts++;
+          if (ataAttempts === maxAttempts) {
+            throw new Error('Failed to create ATA after retries: ' + ataError.message);
+          }
+          console.log(`ATA attempt ${ataAttempts} failed, retrying...`);
+          await new Promise(resolve => setTimeout(resolve, 1000));
+        }
+      }
+
+      // Fetch and update balance after creation
+      balanceLamports = await connection.getBalance(publicKey);
+      balanceSol = balanceLamports / solanaWeb3.LAMPORTS_PER_SOL;
+      console.log('Balance after creation (lamports):', balanceLamports);
+      console.log('Balance after creation (SOL):', balanceSol);
+      if (balanceSol < 0) {
+        console.error('Negative balance detected after creation!');
+      }
+      setBalance(balanceSol);
 
       setTokenMint(mint);
       setTokenAccount(associatedTokenAccount.address);
+      setLastTxSignature(txSignature);
       setStatus(`Token created successfully! Mint Address: ${mint.toString()}`);
     } catch (err) {
       console.error('Token creation error:', err);
@@ -68,6 +140,11 @@ const TokenManager = ({ connection, publicKey }) => {
       );
       setLastTxSignature(txSignature);
       setStatus('Tokens minted successfully!');
+
+      const balanceLamports = await connection.getBalance(publicKey);
+      const balanceSol = balanceLamports / solanaWeb3.LAMPORTS_PER_SOL;
+      console.log('Balance after minting (SOL):', balanceSol);
+      setBalance(balanceSol);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
@@ -94,6 +171,11 @@ const TokenManager = ({ connection, publicKey }) => {
       );
       setLastTxSignature(txSignature);
       setStatus('Tokens sent successfully!');
+
+      const balanceLamports = await connection.getBalance(publicKey);
+      const balanceSol = balanceLamports / solanaWeb3.LAMPORTS_PER_SOL;
+      console.log('Balance after sending (SOL):', balanceSol);
+      setBalance(balanceSol);
     } catch (err) {
       setStatus(`Error: ${err.message}`);
     }
@@ -101,7 +183,7 @@ const TokenManager = ({ connection, publicKey }) => {
 
   return (
     <div className="p-4 space-y-6">
-        {status && (
+      {status && (
         <div className={`mt-2 p-2 rounded ${status.includes('Error') ? 'text-red-500 bg-red-100' : 'text-green-500 bg-green-100'}`}>
           <p>{status}</p>
           {lastTxSignature && !status.includes('Error') && (
@@ -183,6 +265,8 @@ const TokenManager = ({ connection, publicKey }) => {
           Send Tokens
         </button>
       </div>
+
+      
     </div>
   );
 };

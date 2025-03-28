@@ -1,3 +1,4 @@
+// src/App.jsx
 import React, { useState } from 'react';
 import WalletConnector from './components/WalletConnector';
 import TokenManager from './components/TokenManager';
@@ -23,7 +24,7 @@ function App() {
         {publicKey && (
           <div className="mb-6 p-4 bg-white rounded-lg shadow">
             <p className="text-sm break-all"><span className="font-semibold">Wallet Address:</span> {publicKey.toString()}</p>
-            <p className="mt-1"><span className="font-semibold">Balance:</span> {balance} SOL</p>
+            <p className="mt-1"><span className="font-semibold">Balance:</span> {balance !== null ? balance.toFixed(6) : 'Loading...'} SOL</p>
           </div>
         )}
 
@@ -31,6 +32,7 @@ function App() {
           <TokenManager 
             connection={connection}
             publicKey={publicKey}
+            setBalance={setBalance}
           />
         )}
       </main>
