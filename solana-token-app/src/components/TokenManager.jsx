@@ -1,11 +1,9 @@
-// src/components/TokenManager.jsx
 import React, { useState } from 'react';
 import * as splToken from '@solana/spl-token';
 import * as solanaWeb3 from '@solana/web3.js';
 
 const TokenManager = ({ connection, publicKey, setBalance }) => {
   const [tokenName, setTokenName] = useState('');
-  const [tokenSymbol, setTokenSymbol] = useState('');
   const [mintAmount, setMintAmount] = useState('');
   const [recipient, setRecipient] = useState('');
   const [status, setStatus] = useState('');
@@ -208,13 +206,6 @@ const TokenManager = ({ connection, publicKey, setBalance }) => {
           placeholder="Token Name"
           value={tokenName}
           onChange={(e) => setTokenName(e.target.value)}
-          className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
-        />
-        <input
-          type="text"
-          placeholder="Token Symbol"
-          value={tokenSymbol}
-          onChange={(e) => setTokenSymbol(e.target.value)}
           className="w-full p-2 mb-2 border rounded focus:outline-none focus:ring-2 focus:ring-blue-500"
         />
         <button
